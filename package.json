@@ -29,12 +29,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/HenryOoO/CodexKeep.git"
+    "url": "git+https://github.com/senvir/CodexKeep.git"
   },
   "bugs": {
-    "url": "https://github.com/HenryOoO/CodexKeep/issues"
+    "url": "https://github.com/senvir/CodexKeep/issues"
   },
-  "homepage": "https://github.com/HenryOoO/CodexKeep#readme",
+  "homepage": "https://github.com/senvir/CodexKeep#readme",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"
