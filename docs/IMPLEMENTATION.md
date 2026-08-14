@@ -24,7 +24,8 @@
 - Let `codexkeep init <git-url>` publish to an empty remote or safely join a
   populated valid CodexKeep repository.
 - Fetch and compare the configured Git remote only after `codexkeep sync`.
-- Install missing marketplace and plugin entries, commit local changes, rebase, and push.
+- Reconcile marketplace and plugin additions or deletions from their common Git
+  base, apply the confirmed local operations, commit, rebase, and push.
 - Keep local commits when the remote is offline and preserve both sides when Git reports a conflict.
 
 ## Milestone 4: update and diagnostics

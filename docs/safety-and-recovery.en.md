@@ -100,8 +100,11 @@ official-path changes.
 
 `codexkeep sync` validates the repository, all five links, Git state, plugin
 inventory, and portable preferences first. When a remote exists, it fetches to
-build an accurate plan. Plugin installation, configuration writes, commits,
-and push happen only after the plan is accepted.
+compare additions and deletions from the common Git base, then renders a plan
+with green `+` and red `-` markers. Plugin installation or removal,
+configuration writes, commits, and push happen only after the plan is
+accepted. An ambiguous locally missing plugin always requires an explicit
+restore-or-delete choice.
 
 ### Link recovery
 
@@ -119,6 +122,7 @@ Machine-specific backups and technical error records live under:
 
 They can include:
 
+- `pending-plugins.json` for resuming interrupted plugin operations;
 - timestamped backups made before changing the real
   `~/.codex/config.toml`;
 - original content retained when initialization adopts existing official

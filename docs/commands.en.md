@@ -79,20 +79,24 @@ codexkeep sync --yes
 - **Network:** reads local Codex plugin inventory and fetches `origin` when
   configured. Fetching builds an accurate plan; plugin installation and push
   happen only after the plan is accepted.
-- **Changes:** can install missing third-party marketplaces and plugins, update
-  `plugins.json`, reconcile the portable `config.toml` allowlist, back up and
-  update the real Codex config, commit local files, rebase remote updates, and
-  push.
-- **Confirmation:** shows the complete sync plan before writes. `--yes` accepts
-  this routine plan.
+- **Changes:** can install or remove third-party marketplaces and plugins,
+  update `plugins.json`, reconcile the portable `config.toml` allowlist, back
+  up and update the real Codex config, commit local files, rebase remote
+  updates, and push.
+- **Confirmation:** shows the complete sync plan with `+` and `-` markers;
+  interactive terminals render them in green and red. `--yes` accepts the
+  routine plan but never decides whether a locally missing plugin should be
+  restored or treated as an intentional deletion.
 - **Conflicts:** incompatible marketplace sources stop before managed content
   changes. Concurrent local and remote edits to a portable setting require an
-  explicit side. Unresolved Git conflicts stop synchronization without
-  force-overwriting either side.
+  explicit side. A plugin that remains shared but is missing locally also
+  requires choosing either the shared copy or the local deletion. Unresolved
+  Git conflicts stop synchronization without force-overwriting either side.
 - **Failure and recovery:** an offline remote does not prevent local commits.
   A failed push keeps local changes so a later `codexkeep sync` can retry.
-  Account-bound plugins are reported for manual installation or sign-in rather
-  than copying credentials.
+  Failed plugin operations leave the target inventory locally recoverable for
+  a retry. Account-bound plugins are reported for manual installation or
+  sign-in rather than copying credentials.
 
 Without a configured remote, `sync` still saves supported local changes and
 reports that the configuration is local-only.

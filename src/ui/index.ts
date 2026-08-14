@@ -8,6 +8,12 @@ import {
   spinner,
   text,
 } from "@clack/prompts";
+import { styleText } from "node:util";
+
+export interface DiffLine {
+  readonly type: "add" | "remove";
+  readonly text: string;
+}
 
 export interface Choice<T extends string> {
   readonly value: T;
@@ -82,6 +88,19 @@ export class Ui {
 
   list(lines: readonly string[]): void {
     for (const line of lines) this.line(`  + ${line}`);
+  }
+
+  diff(lines: readonly DiffLine[]): void {
+    const isTTY = (this.stdout as NodeJS.WriteStream).isTTY === true;
+    for (const line of lines) {
+      const marker = line.type === "add" ? "+" : "-";
+      const styledMarker = isTTY
+        ? styleText(line.type === "add" ? "green" : "red", marker, {
+            stream: this.stdout,
+          })
+        : marker;
+      this.line(`  ${styledMarker} ${line.text}`);
+    }
   }
 
   async confirm(message: string): Promise<boolean> {

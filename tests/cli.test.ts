@@ -34,6 +34,9 @@ test("initializes an isolated home and synchronizes local and remote changes", a
   const remote = join(root, "remote.git");
   const other = join(root, "other");
   const codexLog = join(root, "codex.log");
+  const gitLog = join(root, "git.log");
+  const inventoryFailure = join(root, "fail-inventory");
+  const removeFailure = join(root, "fail-remove");
   const pluginsJson = join(root, "plugins.json");
   const marketplacesJson = join(root, "marketplaces.json");
   await mkdir(bin, { recursive: true });
@@ -65,6 +68,7 @@ http_headers = { Authorization = "secret" }
   await writeFile(pluginsJson, '{"installed":[],"available":[]}\n');
   await writeFile(marketplacesJson, '{"marketplaces":[]}\n');
   await writeFile(codexLog, "");
+  await writeFile(gitLog, "");
 
   const fakeCodex = join(bin, "codex");
   await writeFile(
@@ -73,22 +77,45 @@ http_headers = { Authorization = "secret" }
 set -eu
 printf '%s\\n' "$*" >>"$CODEXKEEP_TEST_CODEX_LOG"
 case "$*" in
-  "plugin list --json") cat "$CODEXKEEP_TEST_PLUGINS" ;;
+  "plugin list --json")
+    if [ -f "$CODEXKEEP_TEST_FAIL_INVENTORY" ]; then exit 1; fi
+    cat "$CODEXKEEP_TEST_PLUGINS"
+    ;;
   "plugin marketplace list --json") cat "$CODEXKEEP_TEST_MARKETPLACES" ;;
   "plugin marketplace add --json -- "*) exit 0 ;;
+  "plugin marketplace remove --json -- "*)
+    printf '%s\n' '{"marketplaces":[]}' >"$CODEXKEEP_TEST_MARKETPLACES"
+    ;;
   "plugin add --json -- "*) exit 0 ;;
+  "plugin remove --json -- "*)
+    if [ -f "$CODEXKEEP_TEST_FAIL_REMOVE" ]; then exit 1; fi
+    printf '%s\n' '{"installed":[]}' >"$CODEXKEEP_TEST_PLUGINS"
+    ;;
   "plugin marketplace upgrade") exit 0 ;;
   *) exit 1 ;;
 esac
 `,
   );
   await chmod(fakeCodex, 0o755);
+  const fakeGit = join(bin, "git");
+  await writeFile(
+    fakeGit,
+    `#!/bin/sh
+set -eu
+printf '%s\n' "$*" >>"$CODEXKEEP_TEST_GIT_LOG"
+exec /usr/bin/git "$@"
+`,
+  );
+  await chmod(fakeGit, 0o755);
 
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     HOME: home,
     CODEX_CLI_PATH: fakeCodex,
     CODEXKEEP_TEST_CODEX_LOG: codexLog,
+    CODEXKEEP_TEST_GIT_LOG: gitLog,
+    CODEXKEEP_TEST_FAIL_INVENTORY: inventoryFailure,
+    CODEXKEEP_TEST_FAIL_REMOVE: removeFailure,
     CODEXKEEP_TEST_PLUGINS: pluginsJson,
     CODEXKEEP_TEST_MARKETPLACES: marketplacesJson,
     XDG_STATE_HOME: join(home, ".local", "state"),
@@ -222,6 +249,23 @@ esac
   assert.match(updatedBaseConfig, /model = "gpt-5.5"/u);
   assert.match(updatedBaseConfig, /local-secret/u);
 
+  const ambiguousRemoval = await exec(
+    process.execPath,
+    [cli, "sync", "--yes"],
+    { env },
+  ).then(
+    () => undefined,
+    (error: unknown) => error as { stdout: string; stderr: string },
+  );
+  assert.match(
+    ambiguousRemoval?.stdout ?? "",
+    /本机缺少已同步清单中的以下项目/u,
+  );
+  assert.match(
+    ambiguousRemoval?.stderr ?? "",
+    /无法判断是恢复共享插件还是同步本机删除/u,
+  );
+
   const secondHome = join(root, "second-home");
   await mkdir(join(secondHome, ".codex"), { recursive: true });
   const secondEnv = {
@@ -235,9 +279,137 @@ esac
     { env: secondEnv },
   );
   assert.match(joinedExisting.stdout, /本机初始化完成/u);
+  assert.match(joinedExisting.stdout, /\+ 安装 plugin：demo@custom/u);
+  assert.ok(
+    joinedExisting.stdout.indexOf("+ 安装 plugin：demo@custom") <
+      joinedExisting.stdout.indexOf("本机初始化完成"),
+  );
   assert.equal(
     await readlink(join(secondHome, ".agents", "skills")),
     join(secondHome, ".codexkeep", "skills"),
+  );
+
+  await writeFile(
+    pluginsJson,
+    `${JSON.stringify({
+      installed: [
+        {
+          pluginId: "demo@custom",
+          marketplaceName: "custom",
+          installed: true,
+        },
+      ],
+    })}\n`,
+  );
+  await writeFile(
+    marketplacesJson,
+    `${JSON.stringify({
+      marketplaces: [
+        {
+          name: "custom",
+          marketplaceSource: {
+            sourceType: "git",
+            source: "https://example.com/custom.git",
+          },
+        },
+      ],
+    })}\n`,
+  );
+  await git(["pull", "--rebase"], other, env);
+  await writeFile(
+    join(other, "plugins.json"),
+    `${JSON.stringify(
+      {
+        version: 1,
+        marketplaces: [],
+        plugins: [],
+        accountPlugins: [],
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  await git(["add", "plugins.json"], other, env);
+  await git(["commit", "-m", "test: remove plugin"], other, env);
+  await git(["push"], other, env);
+
+  await writeFile(gitLog, "");
+  await writeFile(inventoryFailure, "fail\n");
+  const failedInventoryRead = await exec(
+    process.execPath,
+    [cli, "sync", "--yes"],
+    { env },
+  ).then(
+    () => undefined,
+    (error: unknown) => error as { stdout: string },
+  );
+  assert.match(
+    failedInventoryRead?.stdout ?? "",
+    /Codex CLI 暂时无法读取插件/u,
+  );
+  assert.match(
+    failedInventoryRead?.stdout ?? "",
+    /- 从共享清单移除 plugin：demo@custom/u,
+  );
+  assert.match(
+    failedInventoryRead?.stdout ?? "",
+    /- 从共享清单移除 marketplace：custom/u,
+  );
+  assert.doesNotMatch(
+    failedInventoryRead?.stdout ?? "",
+    /\+ 更新插件清单/u,
+  );
+  const plannedGitCalls = await readFile(gitLog, "utf8");
+  assert.match(plannedGitCalls, /rebase [0-9a-f]{40}/u);
+  assert.doesNotMatch(plannedGitCalls, /^pull\b/mu);
+  await access(
+    join(home, ".local", "state", "codexkeep", "pending-plugins.json"),
+  );
+  const pendingAfterReadFailure = JSON.parse(
+    await readFile(
+      join(home, ".local", "state", "codexkeep", "pending-plugins.json"),
+      "utf8",
+    ),
+  ) as { base: { plugins: string[] }; desired: { plugins: string[] } };
+  assert.deepEqual(pendingAfterReadFailure.base.plugins, ["demo@custom"]);
+  assert.deepEqual(pendingAfterReadFailure.desired.plugins, []);
+  await rm(inventoryFailure, { force: true });
+
+  await writeFile(removeFailure, "fail\n");
+  const failedRemoval = await exec(
+    process.execPath,
+    [cli, "sync", "--yes"],
+    { env },
+  ).then(
+    () => undefined,
+    (error: unknown) => error as { stdout: string },
+  );
+  assert.match(failedRemoval?.stdout ?? "", /plugin demo@custom 卸载失败/u);
+  await access(
+    join(home, ".local", "state", "codexkeep", "pending-plugins.json"),
+  );
+  await rm(removeFailure, { force: true });
+
+  const removed = await exec(
+    process.execPath,
+    [cli, "sync", "--yes"],
+    { env },
+  );
+  assert.match(removed.stdout, /- 卸载 plugin：demo@custom/u);
+  assert.match(removed.stdout, /- 移除 marketplace：custom/u);
+  const removalCalls = await readFile(codexLog, "utf8");
+  assert.match(removalCalls, /plugin remove --json -- demo@custom/u);
+  assert.match(removalCalls, /plugin marketplace remove --json -- custom/u);
+  assert.deepEqual(JSON.parse(await readFile(pluginsJson, "utf8")), {
+    installed: [],
+  });
+  assert.deepEqual(JSON.parse(await readFile(marketplacesJson, "utf8")), {
+    marketplaces: [],
+  });
+  await assert.rejects(async () =>
+    await access(
+      join(home, ".local", "state", "codexkeep", "pending-plugins.json"),
+    ),
   );
 
   const emptyRemote = join(root, "empty-init.git");
@@ -260,6 +432,74 @@ esac
     root,
     env,
   );
+
+  await writeFile(
+    pluginsJson,
+    `${JSON.stringify({
+      installed: [
+        {
+          pluginId: "local@custom",
+          marketplaceName: "custom",
+          installed: true,
+        },
+      ],
+    })}\n`,
+  );
+  await writeFile(
+    marketplacesJson,
+    `${JSON.stringify({
+      marketplaces: [
+        {
+          name: "custom",
+          marketplaceSource: {
+            sourceType: "git",
+            source: "https://example.com/custom.git",
+          },
+        },
+      ],
+    })}\n`,
+  );
+  const fourthHome = join(root, "fourth-home");
+  await mkdir(join(fourthHome, ".codex"), { recursive: true });
+  const accountPluginRoot = join(
+    fourthHome,
+    ".codex",
+    "plugins",
+    "cache",
+    "openai-curated-remote",
+    "github",
+  );
+  await mkdir(join(accountPluginRoot, "1.0.0", ".codex-plugin"), {
+    recursive: true,
+  });
+  await writeFile(
+    join(accountPluginRoot, ".codex-remote-plugin-install.json"),
+    "{}\n",
+  );
+  await writeFile(
+    join(accountPluginRoot, "1.0.0", ".codex-plugin", "plugin.json"),
+    `${JSON.stringify({ interface: { displayName: "GitHub" } })}\n`,
+  );
+  const fourthEnv = {
+    ...env,
+    HOME: fourthHome,
+    XDG_STATE_HOME: join(fourthHome, ".local", "state"),
+  };
+  const initializedWithLocalPlugin = await exec(
+    process.execPath,
+    [cli, "init", remote, "--yes"],
+    { env: fourthEnv },
+  );
+  assert.match(
+    initializedWithLocalPlugin.stdout,
+    /\+ 加入共享清单 plugin：local@custom/u,
+  );
+  assert.match(
+    initializedWithLocalPlugin.stdout,
+    /\+ 记录 account plugin：GitHub（其他设备需手动安装或登录）/u,
+  );
+  await writeFile(pluginsJson, '{"installed":[]}\n');
+  await writeFile(marketplacesJson, '{"marketplaces":[]}\n');
 
   const invalidWork = join(root, "invalid-work");
   const invalidRemote = join(root, "invalid.git");

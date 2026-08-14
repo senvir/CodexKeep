@@ -123,6 +123,23 @@ export async function addPlugin(
   await runCodex(["plugin", "add", "--json", "--", plugin], options);
 }
 
+export async function removeMarketplace(
+  marketplace: string,
+  options: CodexOptions,
+): Promise<void> {
+  await runCodex(
+    ["plugin", "marketplace", "remove", "--json", "--", marketplace],
+    options,
+  );
+}
+
+export async function removePlugin(
+  plugin: string,
+  options: CodexOptions,
+): Promise<void> {
+  await runCodex(["plugin", "remove", "--json", "--", plugin], options);
+}
+
 export async function upgradeMarketplaces(
   options: CodexOptions,
 ): Promise<void> {

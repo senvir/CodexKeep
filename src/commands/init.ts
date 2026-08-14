@@ -163,6 +163,28 @@ export async function initCommand(
 
     ui.line("将进行以下初始化：");
     ui.list(plan);
+    ui.diff([
+      ...imported.addToShared.marketplaces.map((entry) => ({
+        type: "add" as const,
+        text: `${selectedRemote ? "加入共享清单" : "写入清单"} marketplace：${entry.name}`,
+      })),
+      ...imported.addToShared.plugins.map((entry) => ({
+        type: "add" as const,
+        text: `${selectedRemote ? "加入共享清单" : "写入清单"} plugin：${entry}`,
+      })),
+      ...imported.addToShared.accountPlugins.map((entry) => ({
+        type: "add" as const,
+        text: `记录 account plugin：${entry.name}（其他设备需手动安装或登录）`,
+      })),
+      ...imported.install.marketplaces.map((entry) => ({
+        type: "add" as const,
+        text: `添加 marketplace：${entry.name}`,
+      })),
+      ...imported.install.plugins.map((entry) => ({
+        type: "add" as const,
+        text: `安装 plugin：${entry}`,
+      })),
+    ]);
     for (const warning of imported.warnings) ui.warn(warning);
     if (!(await ui.confirm("开始初始化？"))) {
       ui.cancelled();
@@ -234,6 +256,7 @@ export async function initCommand(
       ui.success("本机初始化完成");
       return await syncCommand(context, {
         confirmationAlreadySatisfied: true,
+        restoreRepositoryInventory: remoteState === "populated",
         showTitle: false,
       });
     }

@@ -226,17 +226,6 @@ export async function commit(
   return true;
 }
 
-export async function pullRebase(options: GitOptions): Promise<void> {
-  try {
-    await git(["pull", "--rebase"], { ...options, timeoutMs: 180_000 });
-  } catch (error) {
-    if (await operationInProgress(options)) {
-      await git(["rebase", "--abort"], { ...options, allowFailure: true });
-    }
-    throw error;
-  }
-}
-
 export async function rebaseOnto(
   reference: string,
   options: GitOptions,

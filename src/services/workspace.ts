@@ -7,6 +7,7 @@ import type {
 } from "../domain/inventory.js";
 import {
   emptyInventory,
+  missingInventory,
   normalizeInventory,
   readInventoryIfPresent,
   writeInventory,
@@ -24,6 +25,8 @@ import { collectCodexInventory } from "./codex.js";
 
 export interface ImportResult {
   readonly actions: readonly string[];
+  readonly addToShared: PluginInventory;
+  readonly install: PluginInventory;
   readonly warnings: readonly string[];
 }
 
@@ -135,17 +138,18 @@ export async function importLocalConfiguration(
     }
   }
 
-  const inventories: PluginInventory[] = [
-    await readInventoryIfPresent(join(root, "plugins.json")),
-  ];
+  const previousInventory = await readInventoryIfPresent(
+    join(root, "plugins.json"),
+  );
+  const inventories: PluginInventory[] = [previousInventory];
+  let localInventory: PluginInventory | undefined;
   try {
-    inventories.push(
-      await collectCodexInventory({
-        env: context.env,
-        signal: context.signal,
-        paths,
-      }),
-    );
+    localInventory = await collectCodexInventory({
+      env: context.env,
+      signal: context.signal,
+      paths,
+    });
+    inventories.push(localInventory);
   } catch (error) {
     warnings.push("暂时无法读取 Codex 插件；初始化会保留已有插件清单。");
   }
@@ -155,15 +159,19 @@ export async function importLocalConfiguration(
     context,
     remoteMode,
   );
-  const previousInventory = await readInventoryIfPresent(
-    join(root, "plugins.json"),
-  );
   if (JSON.stringify(previousInventory) !== JSON.stringify(mergedInventory)) {
     await writeInventory(join(root, "plugins.json"), mergedInventory);
     actions.push("合并 marketplace 与 plugin 清单");
   }
 
-  return { actions, warnings };
+  return {
+    actions,
+    addToShared: missingInventory(mergedInventory, previousInventory),
+    install: localInventory
+      ? missingInventory(mergedInventory, localInventory)
+      : emptyInventory(),
+    warnings,
+  };
 }
 
 async function installedSource(path: string): Promise<string | undefined> {
