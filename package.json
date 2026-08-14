@@ -1,6 +1,6 @@
 {
   "name": "codexkeep",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Keep personal Codex skills and portable configuration synchronized through your own Git repository.",
   "type": "module",
   "bin": {

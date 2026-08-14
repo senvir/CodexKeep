@@ -11,7 +11,7 @@ import { recordTechnicalError } from "./services/diagnostics.js";
 import { createPaths } from "./services/paths.js";
 import { Ui } from "./ui/index.js";
 
-const VERSION = "0.1.4";
+const VERSION = "0.1.5";
 
 async function main(argv: readonly string[]): Promise<number> {
   const assumeYes = argv.includes("--yes");
